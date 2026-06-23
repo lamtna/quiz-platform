@@ -1,10 +1,5 @@
 'use strict';
 
-/**
- * questionSelector.service.js
- * Service responsible for selecting questions for game sessions
- */
-
 const Question = require('../models/Question');
 
 /**
@@ -28,7 +23,6 @@ const getRandomQuestions = async ({
 
 /**
  * Questions by difficulty tiers (game mode)
- * easy / medium / hard / expert
  */
 const getQuestionsByLevels = async ({
   categoryId,
@@ -59,7 +53,36 @@ const getQuestionsByLevels = async ({
   return [...easy, ...medium, ...hard, ...expert];
 };
 
+/**
+ * 🎯 Pick single random question (USED by GAME ENGINE)
+ */
+const pickRandom = async (categoryId, difficulty, usedIds = []) => {
+  const match = {
+    category: categoryId,
+    ...(difficulty ? { difficulty } : {}),
+    _id: { $nin: usedIds },
+  };
+
+  const result = await Question.aggregate([
+    { $match: match },
+    { $sample: { size: 1 } }
+  ]);
+
+  return result[0] || null;
+};
+
+/**
+ * 🎯 Mark question as used in game
+ */
+const markUsed = async (game, questionId) => {
+  game.usedQuestions = game.usedQuestions || [];
+  game.usedQuestions.push(questionId);
+  return game.save();
+};
+
 module.exports = {
   getRandomQuestions,
-  getQuestionsByLevels
+  getQuestionsByLevels,
+  pickRandom,
+  markUsed
 };
