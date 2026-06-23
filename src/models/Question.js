@@ -1,63 +1,70 @@
 const mongoose = require('mongoose');
-const { DIFFICULTY_LEVELS, DEFAULT_QUESTION_TIMER } = require('../config/constants');
+const {
+  DIFFICULTY_LEVELS,
+  DEFAULT_QUESTION_TIMER,
+} = require('../config/constants');
 
 const questionSchema = new mongoose.Schema(
   {
     categoryId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Category',
-      required: [true, 'Category is required'],
+      required: true,
       index: true,
     },
+
     text: {
       type: String,
-      required: [true, 'Question text is required'],
+      required: true,
       trim: true,
     },
-    // Media for the question prompt
+
     media: {
-      image: { url: { type: String, default: null }, publicId: { type: String, default: null } },
-      audio: { url: { type: String, default: null }, publicId: { type: String, default: null } },
+      image: { url: String, publicId: String },
+      audio: { url: String, publicId: String },
       video: {
-        url: { type: String, default: null },
-        publicId: { type: String, default: null },
+        url: String,
+        publicId: String,
         isReplayable: { type: Boolean, default: true },
       },
     },
+
     answer: {
       type: String,
-      required: [true, 'Answer is required'],
+      required: true,
       trim: true,
+      lowercase: true,
     },
-    // Media shown on the answer reveal screen
+
     answerMedia: {
-      image: { url: { type: String, default: null }, publicId: { type: String, default: null } },
-      audio: { url: { type: String, default: null }, publicId: { type: String, default: null } },
+      image: { url: String, publicId: String },
+      audio: { url: String, publicId: String },
       video: {
-        url: { type: String, default: null },
-        publicId: { type: String, default: null },
+        url: String,
+        publicId: String,
         isReplayable: { type: Boolean, default: true },
       },
     },
+
     difficulty: {
       type: Number,
-      required: [true, 'Difficulty is required'],
-      enum: {
-        values: DIFFICULTY_LEVELS,
-        message: `Difficulty must be one of: ${DIFFICULTY_LEVELS.join(', ')}`,
-      },
+      required: true,
+      enum: DIFFICULTY_LEVELS,
     },
+
     timer: {
       type: Number,
       default: DEFAULT_QUESTION_TIMER,
-      min: [5, 'Timer must be at least 5 seconds'],
-      max: [300, 'Timer cannot exceed 300 seconds'],
+      min: 5,
+      max: 300,
     },
+
     used: {
       type: Boolean,
       default: false,
       index: true,
     },
+
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -69,7 +76,10 @@ const questionSchema = new mongoose.Schema(
   }
 );
 
-// Compound index for fast random question queries
+/**
+ * Indexes
+ */
 questionSchema.index({ categoryId: 1, difficulty: 1, used: 1 });
+questionSchema.index({ text: 'text' });
 
 module.exports = mongoose.model('Question', questionSchema);

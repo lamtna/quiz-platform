@@ -8,15 +8,23 @@ const {
   restoreFreeGame,
   deleteUser,
 } = require('../controllers/userController');
+
 const { protect, adminOnly } = require('../middleware/auth');
 
-// All user routes require auth + admin
-router.use(protect, adminOnly);
+/**
+ * 🔐 All routes below are protected + admin only
+ */
+router.use(protect);
+router.use(adminOnly);
 
-router.get('/', getAllUsers);
-router.get('/:id', getUserById);
+// الأفضل نخلي الروتات الخاصة أولاً قبل الـ :id العام
 router.put('/:id/role', updateUserRole);
 router.post('/:id/restore-free-game', restoreFreeGame);
+
+// dynamic route بعد الخاص
+router.get('/:id', getUserById);
+
+router.get('/', getAllUsers);
 router.delete('/:id', deleteUser);
 
 module.exports = router;

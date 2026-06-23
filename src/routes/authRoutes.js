@@ -6,12 +6,22 @@ const { register, login, getMe } = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
 const validate = require('../middleware/validate');
 
-// POST /api/auth/register
+// Register
 router.post(
   '/register',
   [
-    body('name').trim().notEmpty().withMessage('Name is required').isLength({ min: 2, max: 50 }),
-    body('email').trim().isEmail().withMessage('Valid email is required').normalizeEmail(),
+    body('name')
+      .trim()
+      .notEmpty()
+      .withMessage('Name is required')
+      .isLength({ min: 2, max: 50 }),
+
+    body('email')
+      .trim()
+      .isEmail()
+      .withMessage('Valid email is required')
+      .normalizeEmail(),
+
     body('password')
       .isLength({ min: 6 })
       .withMessage('Password must be at least 6 characters'),
@@ -20,18 +30,29 @@ router.post(
   register
 );
 
-// POST /api/auth/login
+// Login
 router.post(
   '/login',
   [
-    body('email').trim().isEmail().withMessage('Valid email is required').normalizeEmail(),
-    body('password').notEmpty().withMessage('Password is required'),
+    body('email')
+      .trim()
+      .isEmail()
+      .withMessage('Valid email is required')
+      .normalizeEmail(),
+
+    body('password')
+      .notEmpty()
+      .withMessage('Password is required'),
   ],
   validate,
   login
 );
 
-// GET /api/auth/me
-router.get('/me', protect, getMe);
+// Profile
+router.get(
+  '/me',
+  protect,
+  getMe
+);
 
 module.exports = router;

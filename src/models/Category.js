@@ -10,18 +10,29 @@ const categorySchema = new mongoose.Schema(
       minlength: [2, 'Name must be at least 2 characters'],
       maxlength: [100, 'Name cannot exceed 100 characters'],
     },
+
     image: {
       url: { type: String, default: null },
       publicId: { type: String, default: null },
     },
+
     isActive: {
       type: Boolean,
       default: true,
+      index: true,
     },
+
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
+    },
+
+    // (اختياري احترافي)
+    slug: {
+      type: String,
+      unique: true,
+      sparse: true,
     },
   },
   {
@@ -31,6 +42,14 @@ const categorySchema = new mongoose.Schema(
   }
 );
 
+/**
+ * Indexes
+ */
+categorySchema.index({ name: 1 });
+
+/**
+ * Virtual: question count
+ */
 categorySchema.virtual('questionCount', {
   ref: 'Question',
   localField: '_id',

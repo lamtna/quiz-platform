@@ -1,41 +1,70 @@
 const User = require('../models/User');
-const generateToken = require('../utils/generateToken');
-const { created, success, badRequest, unauthorized } = require('../utils/apiResponse');
+const jwt = require('jsonwebtoken');
+
+const {
+  generateAccessToken,
+  generateRefreshToken,
+} = require('../utils/generateToken');
+
+const {
+  created,
+  success,
+  badRequest,
+  unauthorized,
+} = require('../utils/apiResponse');
 
 /**
- * @route   POST /api/auth/register
- * @access  Public
+ * =========================
+ * REGISTER
+ * =========================
  */
 const register = async (req, res, next) => {
   try {
     const { name, email, password } = req.body;
 
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    const normalizedEmail = email.toLowerCase();
+
+    const existingUser = await User.findOne({ email: normalizedEmail });
+
     if (existingUser) {
       return badRequest(res, 'An account with this email already exists');
     }
 
-    const user = await User.create({ name, email, password });
-    const token = generateToken({
-      id: user._id,
-      role: user.role
+    const user = await User.create({
+      name,
+      email: normalizedEmail,
+      password,
     });
 
-    return created(res, { token, user }, 'Account created successfully');
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+
+    return created(
+      res,
+      {
+        accessToken,
+        refreshToken,
+        user,
+      },
+      'Account created successfully'
+    );
   } catch (err) {
     next(err);
   }
 };
 
 /**
- * @route   POST /api/auth/login
- * @access  Public
+ * =========================
+ * LOGIN
+ * =========================
  */
 const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
+    const normalizedEmail = email.toLowerCase();
+
+    const user = await User.findOne({ email: normalizedEmail }).select('+password');
 
     if (!user) {
       return unauthorized(res, 'Invalid email or password');
@@ -47,29 +76,105 @@ const login = async (req, res, next) => {
       return unauthorized(res, 'Invalid email or password');
     }
 
-    const token = generateToken({
-      id: user._id,
-      role: user.role
-    });
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
 
-    const userObj = user.toJSON();
-
-    return success(res, { token, user: userObj }, 'Login successful');
+    return success(
+      res,
+      {
+        accessToken,
+        refreshToken,
+        user,
+      },
+      'Login successful'
+    );
   } catch (err) {
     next(err);
   }
 };
 
 /**
- * @route   GET /api/auth/me
- * @access  Private
+ * =========================
+ * GET ME
+ * =========================
  */
-const getMe = async (req, res, next) => {
+const getMe = async (req, res) => {
+  return success(res, { user: req.user }, 'User profile retrieved');
+};
+
+/**
+ * =========================
+ * LOGOUT (invalidate all sessions)
+ * =========================
+ */
+const logout = async (req, res, next) => {
   try {
-    return success(res, { user: req.user }, 'User profile retrieved');
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return unauthorized(res, 'User not found');
+    }
+
+    await user.revokeTokens();
+
+    return success(res, null, 'Logged out successfully');
   } catch (err) {
     next(err);
   }
 };
 
-module.exports = { register, login, getMe };
+/**
+ * =========================
+ * REFRESH TOKEN (SECURE)
+ * =========================
+ */
+const refreshToken = async (req, res, next) => {
+  try {
+    const token = req.body.refreshToken;
+
+    if (!token) {
+      return unauthorized(res, 'Refresh token is required');
+    }
+
+    let decoded;
+
+    try {
+      decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
+    } catch (err) {
+      return unauthorized(res, 'Invalid or expired refresh token');
+    }
+
+    const user = await User.findById(decoded.id);
+
+    if (!user) {
+      return unauthorized(res, 'User not found');
+    }
+
+    // 🔥 Security check (version control)
+    if (decoded.ver !== user.refreshTokenVersion) {
+      return unauthorized(res, 'Refresh token revoked');
+    }
+
+    const newAccessToken = generateAccessToken(user);
+    const newRefreshToken = generateRefreshToken(user);
+
+    return success(
+      res,
+      {
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+      },
+      'Token refreshed successfully'
+    );
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = {
+  register,
+  login,
+  getMe,
+  logout,
+  refreshToken,
+};

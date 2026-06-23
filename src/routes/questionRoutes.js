@@ -1,39 +1,89 @@
 const express = require('express');
-const { body } = require('express-validator');
 const router = express.Router();
+
 const {
-  getAllQuestions, getQuestionById, createQuestion, updateQuestion,
-  deleteQuestion, bulkCreateQuestions, resetQuestion, resetCategoryQuestions,
-} = require('../controllers/questionController');
+  createQuestion,
+  getQuestions,
+  getQuestionById,
+  updateQuestion,
+  deleteQuestion,
+  getStats,
+} = require('../controllers/question.controller');
+
 const { protect, adminOnly } = require('../middleware/auth');
 const validate = require('../middleware/validate');
-const { upload } = require('../config/cloudinary');
+const { body } = require('express-validator');
 const { DIFFICULTY_LEVELS } = require('../config/constants');
 
-const mediaFields = upload.fields([
-  { name: 'questionImage', maxCount: 1 },
-  { name: 'questionAudio', maxCount: 1 },
-  { name: 'questionVideo', maxCount: 1 },
-  { name: 'answerImage', maxCount: 1 },
-  { name: 'answerAudio', maxCount: 1 },
-  { name: 'answerVideo', maxCount: 1 },
-]);
+const { upload } = require('../config/cloudinary');
 
-const qValidation = [
-  body('text').trim().notEmpty().withMessage('نص السؤال مطلوب'),
-  body('answer').trim().notEmpty().withMessage('الإجابة مطلوبة'),
-  body('difficulty').isIn(DIFFICULTY_LEVELS).withMessage(`الصعوبة يجب أن تكون: ${DIFFICULTY_LEVELS.join(', ')}`),
-  body('categoryId').isMongoId().withMessage('معرف الفئة غير صالح'),
-  body('timer').optional().isInt({ min: 5, max: 300 }),
-];
-
+// ─────────────────────────────────────────────
+// 🔐 All routes require login
+// ─────────────────────────────────────────────
 router.use(protect);
-router.get('/', adminOnly, getAllQuestions);
+
+// ─────────────────────────────────────────────
+// 📊 Stats (admin only)
+// ─────────────────────────────────────────────
+router.get('/stats', adminOnly, getStats);
+
+// ─────────────────────────────────────────────
+// 📥 Get all questions (admin/editor/user optional view)
+// ─────────────────────────────────────────────
+router.get('/', getQuestions);
+
+// ─────────────────────────────────────────────
+// 📄 Get single question
+// ─────────────────────────────────────────────
 router.get('/:id', getQuestionById);
-router.post('/bulk', adminOnly, bulkCreateQuestions);
-router.post('/', adminOnly, mediaFields, qValidation, validate, createQuestion);
-router.put('/:id', adminOnly, mediaFields, updateQuestion);
-router.post('/:id/reset', adminOnly, resetQuestion);
-router.post('/reset-category/:categoryId', adminOnly, resetCategoryQuestions);
+
+// ─────────────────────────────────────────────
+// ➕ Create question (admin only)
+// ─────────────────────────────────────────────
+router.post(
+  '/',
+  adminOnly,
+  upload.fields([
+    { name: 'questionImage', maxCount: 1 },
+    { name: 'questionAudio', maxCount: 1 },
+    { name: 'questionVideo', maxCount: 1 },
+    { name: 'answerImage', maxCount: 1 },
+    { name: 'answerAudio', maxCount: 1 },
+    { name: 'answerVideo', maxCount: 1 },
+  ]),
+  [
+    body('text').trim().notEmpty().withMessage('نص السؤال مطلوب'),
+    body('answer').trim().notEmpty().withMessage('الإجابة مطلوبة'),
+    body('difficulty')
+      .isIn(DIFFICULTY_LEVELS)
+      .withMessage(`الصعوبة يجب أن تكون: ${DIFFICULTY_LEVELS.join(', ')}`),
+    body('categoryId').isMongoId().withMessage('معرف الفئة غير صالح'),
+    body('timer').optional().isInt({ min: 5, max: 300 }),
+  ],
+  validate,
+  createQuestion
+);
+
+// ─────────────────────────────────────────────
+// ✏️ Update question (admin only)
+// ─────────────────────────────────────────────
+router.put(
+  '/:id',
+  adminOnly,
+  upload.fields([
+    { name: 'questionImage', maxCount: 1 },
+    { name: 'questionAudio', maxCount: 1 },
+    { name: 'questionVideo', maxCount: 1 },
+    { name: 'answerImage', maxCount: 1 },
+    { name: 'answerAudio', maxCount: 1 },
+    { name: 'answerVideo', maxCount: 1 },
+  ]),
+  updateQuestion
+);
+
+// ─────────────────────────────────────────────
+// 🗑 Delete question (admin only)
+// ─────────────────────────────────────────────
 router.delete('/:id', adminOnly, deleteQuestion);
+
 module.exports = router;

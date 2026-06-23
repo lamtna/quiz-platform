@@ -6,33 +6,47 @@ const userSchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: [true, 'Name is required'],
+      required: true,
       trim: true,
-      minlength: [2, 'Name must be at least 2 characters'],
-      maxlength: [50, 'Name cannot exceed 50 characters'],
+      minlength: 2,
+      maxlength: 50,
     },
+
     email: {
       type: String,
-      required: [true, 'Email is required'],
+      required: true,
       unique: true,
+      index: true,
       lowercase: true,
       trim: true,
-      match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email'],
     },
+
     password: {
       type: String,
-      required: [true, 'Password is required'],
-      minlength: [6, 'Password must be at least 6 characters'],
-      select: false, // Never return password by default
+      required: true,
+      minlength: 6,
+      select: false,
     },
+
     role: {
       type: String,
       enum: Object.values(ROLES),
       default: ROLES.USER,
     },
+
     hasFreeGame: {
       type: Boolean,
-      default: true, // Every new user gets one free game
+      default: true,
+    },
+
+    refreshTokenVersion: {
+      type: Number,
+      default: 0,
+    },
+
+    lastLogin: {
+      type: Date,
+      default: null,
     },
   },
   {
@@ -40,24 +54,49 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Hash password before saving
+/**
+ * Indexes
+ */
+userSchema.index({ role: 1 });
+
+/**
+ * Hash password
+ */
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
-  const salt = await bcrypt.genSalt(12);
+
+  const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
   next();
 });
 
-// Compare entered password with hashed password
-userSchema.methods.matchPassword = async function (enteredPassword) {
-  return await bcrypt.compare(enteredPassword, this.password);
+/**
+ * Compare password
+ */
+userSchema.methods.matchPassword = function (password) {
+  return bcrypt.compare(password, this.password);
 };
 
-// Remove sensitive fields when converting to JSON
-userSchema.methods.toJSON = function () {
-  const obj = this.toObject();
-  delete obj.password;
-  return obj;
+/**
+ * Logout all sessions
+ */
+userSchema.methods.revokeTokens = async function () {
+  this.refreshTokenVersion =
+    (this.refreshTokenVersion || 0) + 1;
+
+  await this.save({ validateBeforeSave: false });
 };
+
+/**
+ * Clean output
+ */
+userSchema.set('toJSON', {
+  transform: function (doc, ret) {
+    delete ret.password;
+    delete ret.__v;
+    delete ret.refreshTokenVersion;
+    return ret;
+  },
+});
 
 module.exports = mongoose.model('User', userSchema);
