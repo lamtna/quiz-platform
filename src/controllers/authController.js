@@ -16,7 +16,10 @@ const register = async (req, res, next) => {
     }
 
     const user = await User.create({ name, email, password });
-    const token = generateToken(user._id);
+    const token = generateToken({
+      id: user._id,
+      role: user.role
+    });
 
     return created(res, { token, user }, 'Account created successfully');
   } catch (err) {
@@ -32,20 +35,23 @@ const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    // Explicitly select password (excluded by default)
     const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
+
     if (!user) {
       return unauthorized(res, 'Invalid email or password');
     }
 
     const isMatch = await user.matchPassword(password);
+
     if (!isMatch) {
       return unauthorized(res, 'Invalid email or password');
     }
 
-    const token = generateToken(user._id);
+    const token = generateToken({
+      id: user._id,
+      role: user.role
+    });
 
-    // Strip password before sending
     const userObj = user.toJSON();
 
     return success(res, { token, user: userObj }, 'Login successful');
