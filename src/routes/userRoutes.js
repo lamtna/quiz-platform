@@ -3,81 +3,62 @@
 const User = require('../models/User');
 const { success, notFound } = require('../utils/apiResponse');
 
-/**
- * 👥 Get all users
- */
+/* GET ALL USERS */
 exports.getAllUsers = async (req, res, next) => {
   try {
     const users = await User.find().sort({ createdAt: -1 });
-
-    return success(res, { users }, 'All users fetched');
+    return success(res, { users }, 'ok');
   } catch (err) {
     next(err);
   }
 };
 
-/**
- * 👤 Get user by ID
- */
+/* GET USER */
 exports.getUserById = async (req, res, next) => {
   try {
     const user = await User.findById(req.params.id);
-
-    if (!user) return notFound(res, 'User not found');
-
-    return success(res, { user }, 'User fetched');
+    if (!user) return notFound(res, 'not found');
+    return success(res, { user }, 'ok');
   } catch (err) {
     next(err);
   }
 };
 
-/**
- * 🔑 Update user role
- */
+/* UPDATE ROLE */
 exports.updateUserRole = async (req, res, next) => {
   try {
-    const { role } = req.body;
-
     const user = await User.findById(req.params.id);
-    if (!user) return notFound(res, 'User not found');
+    if (!user) return notFound(res, 'not found');
 
-    user.role = role;
+    user.role = req.body.role;
     await user.save();
 
-    return success(res, { user }, 'Role updated');
+    return success(res, { user }, 'updated');
   } catch (err) {
     next(err);
   }
 };
 
-/**
- * 🎮 Restore free game
- */
+/* RESTORE FREE GAME */
 exports.restoreFreeGame = async (req, res, next) => {
   try {
     const user = await User.findById(req.params.id);
-    if (!user) return notFound(res, 'User not found');
+    if (!user) return notFound(res, 'not found');
 
     user.hasFreeGame = true;
     await user.save();
 
-    return success(res, { user }, 'Free game restored');
+    return success(res, { user }, 'restored');
   } catch (err) {
     next(err);
   }
 };
 
-/**
- * 🗑 Delete user
- */
+/* DELETE USER */
 exports.deleteUser = async (req, res, next) => {
   try {
-    const user = await User.findById(req.params.id);
-    if (!user) return notFound(res, 'User not found');
-
-    await user.deleteOne();
-
-    return success(res, {}, 'User deleted');
+    await User.findByIdAndDelete(req.params.id);
+    return success(res, {}, 'deleted');
   } catch (err) {
     next(err);
   }

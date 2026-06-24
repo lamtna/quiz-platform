@@ -1,4 +1,6 @@
 const express = require('express');
+const { body } = require('express-validator');
+
 const router = express.Router();
 
 const {
@@ -8,37 +10,35 @@ const {
   updateQuestion,
   deleteQuestion,
   getStats,
-} = require('../controllers/question.controller');
+} = require('../controllers/questionController');
 
 const { protect, adminOnly } = require('../middleware/auth');
 const validate = require('../middleware/validate');
-const { body } = require('express-validator');
 const { DIFFICULTY_LEVELS } = require('../config/constants');
-
 const { upload } = require('../config/cloudinary');
 
 // ─────────────────────────────────────────────
-// 🔐 All routes require login
+// 🔐 Authentication
 // ─────────────────────────────────────────────
 router.use(protect);
 
 // ─────────────────────────────────────────────
-// 📊 Stats (admin only)
+// 📊 Stats
 // ─────────────────────────────────────────────
 router.get('/stats', adminOnly, getStats);
 
 // ─────────────────────────────────────────────
-// 📥 Get all questions (admin/editor/user optional view)
+// 📋 Get all questions
 // ─────────────────────────────────────────────
 router.get('/', getQuestions);
 
 // ─────────────────────────────────────────────
-// 📄 Get single question
+// 📄 Get question by ID
 // ─────────────────────────────────────────────
 router.get('/:id', getQuestionById);
 
 // ─────────────────────────────────────────────
-// ➕ Create question (admin only)
+// ➕ Create question
 // ─────────────────────────────────────────────
 router.post(
   '/',
@@ -52,20 +52,36 @@ router.post(
     { name: 'answerVideo', maxCount: 1 },
   ]),
   [
-    body('text').trim().notEmpty().withMessage('نص السؤال مطلوب'),
-    body('answer').trim().notEmpty().withMessage('الإجابة مطلوبة'),
+    body('text')
+      .trim()
+      .notEmpty()
+      .withMessage('Question text is required'),
+
+    body('answer')
+      .trim()
+      .notEmpty()
+      .withMessage('Answer is required'),
+
     body('difficulty')
       .isIn(DIFFICULTY_LEVELS)
-      .withMessage(`الصعوبة يجب أن تكون: ${DIFFICULTY_LEVELS.join(', ')}`),
-    body('categoryId').isMongoId().withMessage('معرف الفئة غير صالح'),
-    body('timer').optional().isInt({ min: 5, max: 300 }),
+      .withMessage(
+        `Difficulty must be one of: ${DIFFICULTY_LEVELS.join(', ')}`
+      ),
+
+    body('categoryId')
+      .isMongoId()
+      .withMessage('Valid category ID is required'),
+
+    body('timer')
+      .optional()
+      .isInt({ min: 5, max: 300 }),
   ],
   validate,
   createQuestion
 );
 
 // ─────────────────────────────────────────────
-// ✏️ Update question (admin only)
+// ✏️ Update question
 // ─────────────────────────────────────────────
 router.put(
   '/:id',
@@ -82,8 +98,12 @@ router.put(
 );
 
 // ─────────────────────────────────────────────
-// 🗑 Delete question (admin only)
+// 🗑 Delete question
 // ─────────────────────────────────────────────
-router.delete('/:id', adminOnly, deleteQuestion);
+router.delete(
+  '/:id',
+  adminOnly,
+  deleteQuestion
+);
 
 module.exports = router;
