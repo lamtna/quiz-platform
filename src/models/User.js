@@ -32,13 +32,30 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: Object.values(ROLES),
       default: ROLES.USER,
+      index: true,
     },
 
+    // ─────────────────────────────
+    // 🏢 SaaS MULTI-TENANT SUPPORT
+    // ─────────────────────────────
+    organizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Organization',
+      index: true,
+      default: null,
+    },
+
+    // ─────────────────────────────
+    // 🎮 GAME LIMIT (FREE PLAN LOGIC)
+    // ─────────────────────────────
     hasFreeGame: {
       type: Boolean,
       default: true,
     },
 
+    // ─────────────────────────────
+    // 🔐 TOKEN SECURITY VERSIONING
+    // ─────────────────────────────
     refreshTokenVersion: {
       type: Number,
       default: 0,
@@ -57,7 +74,7 @@ const userSchema = new mongoose.Schema(
 /**
  * Indexes
  */
-userSchema.index({ role: 1 });
+userSchema.index({ role: 1, organizationId: 1 });
 
 /**
  * Hash password
@@ -78,7 +95,7 @@ userSchema.methods.matchPassword = function (password) {
 };
 
 /**
- * Logout all sessions
+ * Logout all sessions (invalidate refresh tokens)
  */
 userSchema.methods.revokeTokens = async function () {
   this.refreshTokenVersion =
@@ -88,7 +105,7 @@ userSchema.methods.revokeTokens = async function () {
 };
 
 /**
- * Clean output
+ * Clean API output
  */
 userSchema.set('toJSON', {
   transform: function (doc, ret) {

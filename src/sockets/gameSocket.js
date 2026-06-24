@@ -1,14 +1,21 @@
+'use strict';
+
 const { SOCKET_EVENTS } = require('../config/constants');
+const jwt = require('jsonwebtoken');
+
+const ROOM_PREFIX = 'game:';
+
+let ioInstance = null;
 
 /**
- * Initialize Socket.io with the HTTP server.
- * Returns the io instance so controllers can emit to rooms.
- *
- * Room naming: each game gets a room named `game:<gameId>`.
- * Players join by emitting `join_game` with their gameId.
+ * ─────────────────────────────
+ * ⚡ INIT SOCKET.IO
+ * ─────────────────────────────
  */
 const initSocket = (server, corsOrigins) => {
   const { Server } = require('socket.io');
+
+  if (ioInstance) return ioInstance;
 
   const io = new Server(server, {
     cors: {
@@ -19,45 +26,80 @@ const initSocket = (server, corsOrigins) => {
     pingInterval: 25000,
   });
 
-  // ─── Auth middleware for socket connections ───
+  ioInstance = io;
+
+  /**
+   * ─────────────────────────────
+   * 🔐 AUTH MIDDLEWARE
+   * ─────────────────────────────
+   */
   io.use((socket, next) => {
-    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+    const token =
+      socket.handshake.auth?.token ||
+      socket.handshake.query?.token;
+
     if (!token) {
-      // Allow unauthenticated connections for spectating
       socket.data.userId = null;
       return next();
     }
+
     try {
-      const jwt = require('jsonwebtoken');
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       socket.data.userId = decoded.id;
-      next();
-    } catch {
+      return next();
+    } catch (err) {
       return next(new Error('Invalid token'));
     }
   });
 
+  /**
+   * ─────────────────────────────
+   * 🔌 CONNECTION
+   * ─────────────────────────────
+   */
   io.on('connection', (socket) => {
-    console.log(`🔌 Socket connected: ${socket.id} (user: ${socket.data.userId || 'guest'})`);
+    console.log(`🔌 connected: ${socket.id}`);
 
-    // ── JOIN GAME ROOM ──────────────────────────────────────────────────
+    /**
+     * 👥 JOIN GAME
+     */
     socket.on(SOCKET_EVENTS.JOIN_GAME, ({ gameId }) => {
       if (!gameId) return;
-      socket.join(`game:${gameId}`);
-      socket.data.gameId = gameId;
-      console.log(`   ↳ Joined room: game:${gameId}`);
 
-      // Notify others in room
-      socket.to(`game:${gameId}`).emit(SOCKET_EVENTS.PLAYER_JOINED, {
+      const room = `${ROOM_PREFIX}${gameId}`;
+
+      socket.join(room);
+      socket.data.gameId = gameId;
+
+      console.log(`↳ joined ${room}`);
+
+      socket.to(room).emit(SOCKET_EVENTS.PLAYER_JOINED, {
         socketId: socket.id,
         userId: socket.data.userId,
       });
     });
 
+    /**
+     * ❌ DISCONNECT
+     */
     socket.on('disconnect', (reason) => {
-      console.log(`🔌 Socket disconnected: ${socket.id} — ${reason}`);
+      console.log(`🔌 disconnected: ${socket.id} (${reason})`);
+
+      const gameId = socket.data.gameId;
+      if (gameId) {
+        socket.to(`${ROOM_PREFIX}${gameId}`).emit(
+          SOCKET_EVENTS.PLAYER_LEFT,
+          {
+            socketId: socket.id,
+            userId: socket.data.userId,
+          }
+        );
+      }
     });
 
+    /**
+     * 🚨 ERROR
+     */
     socket.on('error', (err) => {
       console.error(`Socket error (${socket.id}):`, err.message);
     });
@@ -66,13 +108,21 @@ const initSocket = (server, corsOrigins) => {
   return io;
 };
 
-// ─── Emit helpers used by controllers ────────────────────────────────────────
+/**
+ * ─────────────────────────────
+ * 🧠 ROOM HELPER
+ * ─────────────────────────────
+ */
+const getRoom = (gameId) => `${ROOM_PREFIX}${gameId}`;
 
 /**
- * Emit game_created to the game's room.
+ * ─────────────────────────────
+ * 🎮 EMIT HELPERS
+ * ─────────────────────────────
  */
+
 const emitGameCreated = (io, game) => {
-  io.to(`game:${game._id}`).emit(SOCKET_EVENTS.GAME_CREATED, {
+  io.to(getRoom(game._id)).emit(SOCKET_EVENTS.GAME_CREATED, {
     gameId: game._id,
     gameName: game.gameName,
     teamAName: game.teamAName,
@@ -83,32 +133,32 @@ const emitGameCreated = (io, game) => {
   });
 };
 
-/**
- * Emit question_selected — does NOT include the answer.
- */
 const emitQuestionSelected = (io, gameId, payload) => {
-  io.to(`game:${gameId}`).emit(SOCKET_EVENTS.QUESTION_SELECTED, payload);
+  io.to(getRoom(gameId)).emit(
+    SOCKET_EVENTS.QUESTION_SELECTED,
+    payload
+  );
 };
 
-/**
- * Emit answer_revealed — includes answer + media + score delta.
- */
 const emitAnswerRevealed = (io, gameId, payload) => {
-  io.to(`game:${gameId}`).emit(SOCKET_EVENTS.ANSWER_REVEALED, payload);
+  io.to(getRoom(gameId)).emit(
+    SOCKET_EVENTS.ANSWER_REVEALED,
+    payload
+  );
 };
 
-/**
- * Emit score_updated after a point change.
- */
 const emitScoreUpdated = (io, gameId, score) => {
-  io.to(`game:${gameId}`).emit(SOCKET_EVENTS.SCORE_UPDATED, { score });
+  io.to(getRoom(gameId)).emit(
+    SOCKET_EVENTS.SCORE_UPDATED,
+    { score }
+  );
 };
 
-/**
- * Emit game_finished with final results.
- */
 const emitGameFinished = (io, gameId, payload) => {
-  io.to(`game:${gameId}`).emit(SOCKET_EVENTS.GAME_FINISHED, payload);
+  io.to(getRoom(gameId)).emit(
+    SOCKET_EVENTS.GAME_FINISHED,
+    payload
+  );
 };
 
 module.exports = {
@@ -118,4 +168,5 @@ module.exports = {
   emitAnswerRevealed,
   emitScoreUpdated,
   emitGameFinished,
+  getRoom,
 };

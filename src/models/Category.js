@@ -11,9 +11,24 @@ const categorySchema = new mongoose.Schema(
       maxlength: [100, 'Name cannot exceed 100 characters'],
     },
 
+    slug: {
+      type: String,
+      unique: true,
+      sparse: true,
+      lowercase: true,
+      trim: true,
+    },
+
     image: {
-      url: { type: String, default: null },
-      publicId: { type: String, default: null },
+      url: {
+        type: String,
+        default: null,
+      },
+
+      publicId: {
+        type: String,
+        default: null,
+      },
     },
 
     isActive: {
@@ -27,18 +42,15 @@ const categorySchema = new mongoose.Schema(
       ref: 'User',
       required: true,
     },
-
-    // (اختياري احترافي)
-    slug: {
-      type: String,
-      unique: true,
-      sparse: true,
-    },
   },
   {
     timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
+    toJSON: {
+      virtuals: true,
+    },
+    toObject: {
+      virtuals: true,
+    },
   }
 );
 
@@ -46,9 +58,10 @@ const categorySchema = new mongoose.Schema(
  * Indexes
  */
 categorySchema.index({ name: 1 });
+categorySchema.index({ slug: 1 });
 
 /**
- * Virtual: question count
+ * Question Count
  */
 categorySchema.virtual('questionCount', {
   ref: 'Question',
@@ -57,4 +70,24 @@ categorySchema.virtual('questionCount', {
   count: true,
 });
 
-module.exports = mongoose.model('Category', categorySchema);
+/**
+ * Auto Slug
+ */
+categorySchema.pre('save', function (next) {
+  if (
+    this.isModified('name') ||
+    !this.slug
+  ) {
+    this.slug = this.name
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-');
+  }
+
+  next();
+});
+
+module.exports = mongoose.model(
+  'Category',
+  categorySchema
+);

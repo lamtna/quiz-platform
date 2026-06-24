@@ -1,13 +1,22 @@
-/**
- * io singleton — set once in server.js, imported by controllers.
- * This avoids circular dependencies when controllers need to emit events.
- */
-let _io = null;
+'use strict';
 
-const setIo = (io) => { _io = io; };
-const getIo = () => {
-  if (!_io) throw new Error('Socket.io not initialized. Call setIo(io) first.');
-  return _io;
+const { initSocket } = require('./gameSocket');
+const { initAdminSocket } = require('./adminSocket');
+
+let io;
+
+const setIo = (server, corsOrigins) => {
+  const gameIO = initSocket(server, corsOrigins);
+  const adminIO = initAdminSocket(server, corsOrigins);
+
+  io = { gameIO, adminIO };
+
+  return io;
 };
 
-module.exports = { setIo, getIo };
+const getIo = () => io?.gameIO;
+
+module.exports = {
+  setIo,
+  getIo,
+};

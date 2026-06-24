@@ -1,0 +1,20 @@
+import DifficultyChart from "../../components/admin/DifficultyChart";
+import GamesChart from "../../components/admin/GamesChart";
+import TopCategoriesChart from "../../components/admin/TopCategoriesChart";
+
+export default function Dashboard({ stats }) {
+  return (
+    <div className="p-6 grid grid-cols-2 gap-6">
+
+      <DifficultyChart data={stats.questionsByDifficulty} />
+
+      <GamesChart
+        active={stats.overview.games.active}
+        finished={stats.overview.games.finished}
+      />
+
+      <TopCategoriesChart data={stats.topCategories} />
+
+    </div>
+  );
+}

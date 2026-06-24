@@ -1,16 +1,117 @@
 'use strict';
 
 const Game = require('../models/Game');
-const mongoose = require('mongoose');
 const Question = require('../models/Question');
+const mongoose = require('mongoose');
 
-const {
-  pickRandom,
-} = require('../services/questionSelector.service');
+const { pickRandom } = require('../services/questionSelector.service');
+const { getIo } = require('../socket');
 
 /**
- * 🎮 GET NEXT QUESTION
+ * ─────────────────────────────
+ * 🧠 AUTO FINISH CHECK
+ * ─────────────────────────────
  */
+const autoCheckFinish = async (game) => {
+  const allAnswered = game.board.every(c => c.isAnswered);
+
+  if (!allAnswered) return false;
+
+  let winner = 'tie';
+
+  if (game.score.teamA > game.score.teamB) winner = 'teamA';
+  else if (game.score.teamB > game.score.teamA) winner = 'teamB';
+
+  game.winner = winner;
+  game.status = 'finished';
+  game.finishedAt = new Date();
+
+  await game.save();
+
+  const io = getIo();
+  io.to(game._id.toString()).emit('gameFinished', {
+    winner,
+    score: game.score,
+  });
+
+  return true;
+};
+
+/* ─────────────────────────────
+   🎮 GET GAMES (SAAS)
+───────────────────────────── */
+exports.getGames = async (req, res, next) => {
+  try {
+    const games = await Game.find({
+      organizationId: req.tenantId,
+    });
+
+    res.json({ success: true, data: games });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/* ─────────────────────────────
+   🎯 GET GAME BY ID
+───────────────────────────── */
+exports.getGameById = async (req, res, next) => {
+  try {
+    const game = await Game.findOne({
+      _id: req.params.id,
+      organizationId: req.tenantId,
+    });
+
+    if (!game) {
+      return res.status(404).json({
+        success: false,
+        message: 'Game not found',
+      });
+    }
+
+    res.json({ success: true, data: game });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/* ─────────────────────────────
+   🎮 START GAME (ADMIN)
+───────────────────────────── */
+exports.startGame = async (req, res, next) => {
+  try {
+    const game = await Game.findOne({
+      _id: req.params.id,
+      organizationId: req.tenantId,
+    });
+
+    if (!game) {
+      return res.status(404).json({
+        success: false,
+        message: 'Game not found',
+      });
+    }
+
+    game.status = 'active';
+    game.startedAt = new Date();
+
+    await game.save();
+
+    const io = getIo();
+    io.to(game._id.toString()).emit('gameStarted', {
+      gameId: game._id,
+      status: game.status,
+    });
+
+    res.json({ success: true, message: 'Game started' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/* ─────────────────────────────
+   ❓ GET NEXT QUESTION
+───────────────────────────── */
 exports.getNextQuestion = async (req, res, next) => {
   try {
     const { gameId, categoryId, difficulty } = req.body;
@@ -21,11 +122,14 @@ exports.getNextQuestion = async (req, res, next) => {
     ) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid gameId or categoryId',
+        message: 'Invalid IDs',
       });
     }
 
-    const game = await Game.findById(gameId);
+    const game = await Game.findOne({
+      _id: gameId,
+      organizationId: req.tenantId,
+    });
 
     if (!game) {
       return res.status(404).json({
@@ -35,8 +139,8 @@ exports.getNextQuestion = async (req, res, next) => {
     }
 
     const usedIds = (game.board || [])
-      .filter((c) => c.questionId)
-      .map((c) => c.questionId.toString());
+      .map((c) => c.questionId?.toString())
+      .filter(Boolean);
 
     const question = await pickRandom(
       categoryId,
@@ -56,7 +160,7 @@ exports.getNextQuestion = async (req, res, next) => {
       categoryId,
       difficulty,
       startedAt: new Date(),
-      duration: question.timer || 30,
+      duration: question.timer ?? 30,
     };
 
     game.board.push({
@@ -72,19 +176,18 @@ exports.getNextQuestion = async (req, res, next) => {
 
     await game.save();
 
-    return res.json({
-      success: true,
-      data: question,
-    });
+    const io = getIo();
+    io.to(game._id.toString()).emit('newQuestion', { question });
 
+    res.json({ success: true, data: question });
   } catch (err) {
     next(err);
   }
 };
 
-/**
- * 🎯 SUBMIT ANSWER
- */
+/* ─────────────────────────────
+   🎯 SUBMIT ANSWER
+───────────────────────────── */
 exports.submitAnswer = async (req, res, next) => {
   try {
     const { gameId, questionId, answer, team } = req.body;
@@ -99,7 +202,10 @@ exports.submitAnswer = async (req, res, next) => {
       });
     }
 
-    const game = await Game.findById(gameId);
+    const game = await Game.findOne({
+      _id: gameId,
+      organizationId: req.tenantId,
+    });
 
     if (!game) {
       return res.status(404).json({
@@ -117,13 +223,24 @@ exports.submitAnswer = async (req, res, next) => {
       });
     }
 
-    const isCorrect =
-      question.correctAnswer?.toString().trim().toLowerCase() ===
-      answer?.toString().trim().toLowerCase();
-
     const cell = game.board.find(
       (c) => c.questionId?.toString() === questionId
     );
+
+    if (cell?.isAnswered) {
+      return res.status(400).json({
+        success: false,
+        message: 'Already answered',
+      });
+    }
+
+    const normalize = (v) =>
+      (v || '').toString().trim().toLowerCase();
+
+    const isCorrect =
+      normalize(question.correctAnswer) === normalize(answer);
+
+    game.score = game.score || { teamA: 0, teamB: 0 };
 
     if (cell) {
       cell.isAnswered = true;
@@ -136,17 +253,30 @@ exports.submitAnswer = async (req, res, next) => {
       game.score[team] += question.points || 100;
     }
 
+    game.currentQuestion = null;
+
     await game.save();
 
-    return res.json({
+    const io = getIo();
+    io.to(game._id.toString()).emit('answerResult', {
+      questionId,
+      team,
+      isCorrect,
+      score: game.score,
+    });
+
+    const isFinished = await autoCheckFinish(game);
+
+    res.json({
       success: true,
       data: {
         isCorrect,
         correctAnswer: question.correctAnswer,
         score: game.score,
+        isFinished,
+        winner: game.winner || null,
       },
     });
-
   } catch (err) {
     next(err);
   }

@@ -1,30 +1,84 @@
-const express = require('express');
-const router = express.Router();
+'use strict';
 
-const {
-  getAllUsers,
-  getUserById,
-  updateUserRole,
-  restoreFreeGame,
-  deleteUser,
-} = require('../controllers/userController');
-
-const { protect, adminOnly } = require('../middleware/auth');
+const User = require('../models/User');
+const { success, notFound } = require('../utils/apiResponse');
 
 /**
- * 🔐 All routes below are protected + admin only
+ * 👥 Get all users
  */
-router.use(protect);
-router.use(adminOnly);
+exports.getAllUsers = async (req, res, next) => {
+  try {
+    const users = await User.find().sort({ createdAt: -1 });
 
-// الأفضل نخلي الروتات الخاصة أولاً قبل الـ :id العام
-router.put('/:id/role', updateUserRole);
-router.post('/:id/restore-free-game', restoreFreeGame);
+    return success(res, { users }, 'All users fetched');
+  } catch (err) {
+    next(err);
+  }
+};
 
-// dynamic route بعد الخاص
-router.get('/:id', getUserById);
+/**
+ * 👤 Get user by ID
+ */
+exports.getUserById = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id);
 
-router.get('/', getAllUsers);
-router.delete('/:id', deleteUser);
+    if (!user) return notFound(res, 'User not found');
 
-module.exports = router;
+    return success(res, { user }, 'User fetched');
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * 🔑 Update user role
+ */
+exports.updateUserRole = async (req, res, next) => {
+  try {
+    const { role } = req.body;
+
+    const user = await User.findById(req.params.id);
+    if (!user) return notFound(res, 'User not found');
+
+    user.role = role;
+    await user.save();
+
+    return success(res, { user }, 'Role updated');
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * 🎮 Restore free game
+ */
+exports.restoreFreeGame = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return notFound(res, 'User not found');
+
+    user.hasFreeGame = true;
+    await user.save();
+
+    return success(res, { user }, 'Free game restored');
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * 🗑 Delete user
+ */
+exports.deleteUser = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return notFound(res, 'User not found');
+
+    await user.deleteOne();
+
+    return success(res, {}, 'User deleted');
+  } catch (err) {
+    next(err);
+  }
+};
