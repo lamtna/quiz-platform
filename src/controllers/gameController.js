@@ -5,7 +5,9 @@ const Question = require('../models/Question');
 const mongoose = require('mongoose');
 
 const { pickRandom } = require('../services/questionSelector.service');
-const { getIo } = require('../socket');
+
+// ✅ FIXED SOCKET IMPORT
+const { getIo } = require('../sockets');
 
 /**
  * ─────────────────────────────
@@ -13,14 +15,18 @@ const { getIo } = require('../socket');
  * ─────────────────────────────
  */
 const autoCheckFinish = async (game) => {
-  const allAnswered = game.board.every(c => c.isAnswered);
+  if (!game?.board?.length) return false;
 
+  const allAnswered = game.board.every((c) => c.isAnswered);
   if (!allAnswered) return false;
 
   let winner = 'tie';
 
-  if (game.score.teamA > game.score.teamB) winner = 'teamA';
-  else if (game.score.teamB > game.score.teamA) winner = 'teamB';
+  const teamAScore = game.score?.teamA || 0;
+  const teamBScore = game.score?.teamB || 0;
+
+  if (teamAScore > teamBScore) winner = 'teamA';
+  else if (teamBScore > teamAScore) winner = 'teamB';
 
   game.winner = winner;
   game.status = 'finished';
@@ -38,7 +44,7 @@ const autoCheckFinish = async (game) => {
 };
 
 /* ─────────────────────────────
-   🎮 GET GAMES (SAAS)
+   🎮 GET GAMES
 ───────────────────────────── */
 exports.getGames = async (req, res, next) => {
   try {
@@ -76,7 +82,7 @@ exports.getGameById = async (req, res, next) => {
 };
 
 /* ─────────────────────────────
-   🎮 START GAME (ADMIN)
+   🎮 START GAME
 ───────────────────────────── */
 exports.startGame = async (req, res, next) => {
   try {
@@ -142,11 +148,7 @@ exports.getNextQuestion = async (req, res, next) => {
       .map((c) => c.questionId?.toString())
       .filter(Boolean);
 
-    const question = await pickRandom(
-      categoryId,
-      difficulty,
-      usedIds
-    );
+    const question = await pickRandom(categoryId, difficulty, usedIds);
 
     if (!question) {
       return res.status(404).json({
@@ -241,6 +243,10 @@ exports.submitAnswer = async (req, res, next) => {
       normalize(question.correctAnswer) === normalize(answer);
 
     game.score = game.score || { teamA: 0, teamB: 0 };
+
+    if (!game.score[team]) {
+      game.score[team] = 0;
+    }
 
     if (cell) {
       cell.isAnswered = true;

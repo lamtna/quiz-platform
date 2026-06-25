@@ -5,14 +5,11 @@ const { body } = require('express-validator');
 const router = express.Router();
 
 const {
-  createGame,
   getGames,
   getGameById,
-  selectQuestion,
-  revealAnswer,
-  finishGame,
-  getGameSummary,
-  deleteGame,
+  startGame,
+  getNextQuestion,
+  submitAnswer,
 } = require('../controllers/gameController');
 
 const { protect } = require('../middleware/auth');
@@ -20,87 +17,53 @@ const attachTenant = require('../middleware/tenant');
 const validate = require('../middleware/validate');
 
 const {
-  REQUIRED_CATEGORIES,
   DIFFICULTY_LEVELS,
 } = require('../config/constants');
 
 // ─────────────────────────────
-// 🔐 AUTH + SAAS TENANT PROTECTION
+// 🔐 AUTH + TENANT
 // ─────────────────────────────
 router.use(protect);
-router.use(attachTenant); // 🏢 مهم جداً SaaS
+router.use(attachTenant);
 
 // ─────────────────────────────
-// 🎮 GAME ROUTES
+// 🎮 GAME ROUTES (UPDATED)
 // ─────────────────────────────
 
-// 📊 Get all games (filtered by tenant)
+// 📊 Get all games
 router.get('/', getGames);
 
 // 🎯 Get single game
 router.get('/:id', getGameById);
 
-// 📈 Game summary
-router.get('/:id/summary', getGameSummary);
+// 🎮 Start game
+router.post('/:id/start', startGame);
 
-// 🆕 Create game
+// ❓ Get next question (NEW ENGINE FLOW)
 router.post(
-  '/',
+  '/:id/next-question',
   [
-    body('gameName').trim().notEmpty().withMessage('Game name is required'),
-    body('teamAName').trim().notEmpty().withMessage('Team A name is required'),
-    body('teamBName').trim().notEmpty().withMessage('Team B name is required'),
-
-    body('categoryIds')
-      .isArray({
-        min: REQUIRED_CATEGORIES,
-        max: REQUIRED_CATEGORIES,
-      })
-      .withMessage(`Exactly ${REQUIRED_CATEGORIES} categories required`),
-
-    body('categoryIds.*')
-      .isMongoId()
-      .withMessage('Each category must be a valid ID'),
-  ],
-  validate,
-  createGame
-);
-
-// ❓ Select question
-router.post(
-  '/:id/select-question',
-  [
-    body('categoryId')
-      .isMongoId()
-      .withMessage('Valid category ID is required'),
-
+    body('gameId').isMongoId().withMessage('Invalid gameId'),
+    body('categoryId').isMongoId().withMessage('Invalid categoryId'),
     body('difficulty')
       .isIn(DIFFICULTY_LEVELS)
-      .withMessage(
-        `Difficulty must be one of: ${DIFFICULTY_LEVELS.join(', ')}`
-      ),
+      .withMessage(`Difficulty must be one of: ${DIFFICULTY_LEVELS.join(', ')}`),
   ],
   validate,
-  selectQuestion
+  getNextQuestion
 );
 
-// 🎯 Reveal answer
+// 🎯 Submit answer
 router.post(
-  '/:id/reveal-answer',
+  '/:id/submit-answer',
   [
-    body('teamScored')
-      .optional({ nullable: true })
-      .isIn(['teamA', 'teamB', null])
-      .withMessage('teamScored must be teamA, teamB, or null'),
+    body('gameId').isMongoId().withMessage('Invalid gameId'),
+    body('questionId').isMongoId().withMessage('Invalid questionId'),
+    body('answer').notEmpty().withMessage('Answer is required'),
+    body('team').isIn(['teamA', 'teamB']).withMessage('Invalid team'),
   ],
   validate,
-  revealAnswer
+  submitAnswer
 );
-
-// 🏁 Finish game
-router.post('/:id/finish', finishGame);
-
-// 🗑 Delete game
-router.delete('/:id', deleteGame);
 
 module.exports = router;

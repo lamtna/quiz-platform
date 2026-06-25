@@ -1,45 +1,48 @@
+'use strict';
+
 const express = require('express');
 const { body } = require('express-validator');
 
 const router = express.Router();
 
-const {
-  createQuestion,
-  getQuestions,
-  getQuestionById,
-  updateQuestion,
-  deleteQuestion,
-  getStats,
-} = require('../controllers/questionController');
+const questionController = require('../controllers/questionController');
 
 const { protect, adminOnly } = require('../middleware/auth');
 const validate = require('../middleware/validate');
 const { DIFFICULTY_LEVELS } = require('../config/constants');
 const { upload } = require('../config/cloudinary');
 
-// ─────────────────────────────────────────────
-// 🔐 Authentication
-// ─────────────────────────────────────────────
+// ─────────────────────────────
+// 🔐 AUTH
+// ─────────────────────────────
 router.use(protect);
 
-// ─────────────────────────────────────────────
-// 📊 Stats
-// ─────────────────────────────────────────────
-router.get('/stats', adminOnly, getStats);
+// ─────────────────────────────
+// ❗️ HARD SAFETY CHECK (no silent undefined)
+// ─────────────────────────────
+const requireFn = (name) => {
+  const fn = questionController[name];
 
-// ─────────────────────────────────────────────
-// 📋 Get all questions
-// ─────────────────────────────────────────────
-router.get('/', getQuestions);
+  if (!fn) {
+    throw new Error(`❌ Controller missing function: ${name}`);
+  }
 
-// ─────────────────────────────────────────────
-// 📄 Get question by ID
-// ─────────────────────────────────────────────
-router.get('/:id', getQuestionById);
+  return fn;
+};
 
-// ─────────────────────────────────────────────
-// ➕ Create question
-// ─────────────────────────────────────────────
+// ─────────────────────────────
+// 📋 GET ALL QUESTIONS
+// ─────────────────────────────
+router.get('/', requireFn('getAllQuestions'));
+
+// ─────────────────────────────
+// 📄 GET QUESTION BY ID
+// ─────────────────────────────
+router.get('/:id', requireFn('getQuestionById'));
+
+// ─────────────────────────────
+// ➕ CREATE QUESTION
+// ─────────────────────────────
 router.post(
   '/',
   adminOnly,
@@ -52,37 +55,19 @@ router.post(
     { name: 'answerVideo', maxCount: 1 },
   ]),
   [
-    body('text')
-      .trim()
-      .notEmpty()
-      .withMessage('Question text is required'),
-
-    body('answer')
-      .trim()
-      .notEmpty()
-      .withMessage('Answer is required'),
-
-    body('difficulty')
-      .isIn(DIFFICULTY_LEVELS)
-      .withMessage(
-        `Difficulty must be one of: ${DIFFICULTY_LEVELS.join(', ')}`
-      ),
-
-    body('categoryId')
-      .isMongoId()
-      .withMessage('Valid category ID is required'),
-
-    body('timer')
-      .optional()
-      .isInt({ min: 5, max: 300 }),
+    body('text').trim().notEmpty(),
+    body('answer').trim().notEmpty(),
+    body('difficulty').isIn(DIFFICULTY_LEVELS),
+    body('categoryId').isMongoId(),
+    body('timer').optional().isInt({ min: 5, max: 300 }),
   ],
   validate,
-  createQuestion
+  requireFn('createQuestion')
 );
 
-// ─────────────────────────────────────────────
-// ✏️ Update question
-// ─────────────────────────────────────────────
+// ─────────────────────────────
+// ✏️ UPDATE QUESTION
+// ─────────────────────────────
 router.put(
   '/:id',
   adminOnly,
@@ -94,16 +79,12 @@ router.put(
     { name: 'answerAudio', maxCount: 1 },
     { name: 'answerVideo', maxCount: 1 },
   ]),
-  updateQuestion
+  requireFn('updateQuestion')
 );
 
-// ─────────────────────────────────────────────
-// 🗑 Delete question
-// ─────────────────────────────────────────────
-router.delete(
-  '/:id',
-  adminOnly,
-  deleteQuestion
-);
+// ─────────────────────────────
+// 🗑 DELETE QUESTION
+// ─────────────────────────────
+router.delete('/:id', adminOnly, requireFn('deleteQuestion'));
 
 module.exports = router;
