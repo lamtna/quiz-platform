@@ -5,7 +5,6 @@ const categorySchema = new mongoose.Schema(
     name: {
       type: String,
       required: [true, 'Category name is required'],
-      unique: true,
       trim: true,
       minlength: [2, 'Name must be at least 2 characters'],
       maxlength: [100, 'Name cannot exceed 100 characters'],
@@ -13,28 +12,18 @@ const categorySchema = new mongoose.Schema(
 
     slug: {
       type: String,
-      unique: true,
-      sparse: true,
       lowercase: true,
       trim: true,
     },
 
     image: {
-      url: {
-        type: String,
-        default: null,
-      },
-
-      publicId: {
-        type: String,
-        default: null,
-      },
+      url: { type: String, default: null },
+      publicId: { type: String, default: null },
     },
 
     isActive: {
       type: Boolean,
       default: true,
-      index: true,
     },
 
     createdBy: {
@@ -45,23 +34,20 @@ const categorySchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-    toJSON: {
-      virtuals: true,
-    },
-    toObject: {
-      virtuals: true,
-    },
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
 
 /**
- * Indexes
+ * 🚀 SaaS CLEAN INDEXES
  */
-categorySchema.index({ name: 1 });
-categorySchema.index({ slug: 1 });
+categorySchema.index({ name: 1 }, { unique: true });
+categorySchema.index({ slug: 1 }, { unique: true, sparse: true });
+categorySchema.index({ isActive: 1 });
 
 /**
- * Question Count
+ * Virtual
  */
 categorySchema.virtual('questionCount', {
   ref: 'Question',
@@ -74,20 +60,13 @@ categorySchema.virtual('questionCount', {
  * Auto Slug
  */
 categorySchema.pre('save', function (next) {
-  if (
-    this.isModified('name') ||
-    !this.slug
-  ) {
+  if (this.isModified('name') || !this.slug) {
     this.slug = this.name
       .trim()
       .toLowerCase()
       .replace(/\s+/g, '-');
   }
-
   next();
 });
 
-module.exports = mongoose.model(
-  'Category',
-  categorySchema
-);
+module.exports = mongoose.model('Category', categorySchema);

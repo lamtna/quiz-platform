@@ -10,7 +10,6 @@ const questionSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Category',
       required: true,
-      index: true,
     },
 
     text: {
@@ -62,7 +61,6 @@ const questionSchema = new mongoose.Schema(
     used: {
       type: Boolean,
       default: false,
-      index: true,
     },
 
     createdBy: {
@@ -77,9 +75,10 @@ const questionSchema = new mongoose.Schema(
 );
 
 /**
- * Indexes
+ * 🚀 SaaS INDEXES (OPTIMIZED)
  */
 questionSchema.index({ categoryId: 1, difficulty: 1, used: 1 });
 questionSchema.index({ text: 'text' });
+questionSchema.index({ used: 1 });
 
 module.exports = mongoose.model('Question', questionSchema);

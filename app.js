@@ -8,117 +8,95 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 
 const errorHandler = require('./src/middleware/errorHandler');
-const { notFound: notFoundResponse } = require('./src/utils/apiResponse');
-
-// Routes
-const authRoutes = require('./src/routes/authRoutes');
-const userRoutes = require('./src/routes/userRoutes');
-const categoryRoutes = require('./src/routes/categoryRoutes');
-const questionRoutes = require('./src/routes/questionRoutes');
-const gameRoutes = require('./src/routes/gameRoutes');
-const adminRoutes = require('./src/routes/adminRoutes');
+const { notFound } = require('./src/utils/apiResponse');
 
 const app = express();
 
-/**
- * ─────────────────────────────
- * 🧠 TRUST PROXY (important for deploy)
- * ─────────────────────────────
- */
 app.set('trust proxy', 1);
 
 /**
- * ─────────────────────────────
- * 🔐 SECURITY HEADERS
- * ─────────────────────────────
+ * 🔐 Security
  */
-app.use(
-  helmet({
-    contentSecurityPolicy: false,
-  })
-);
+app.use(helmet({ contentSecurityPolicy: false }));
+
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || '*',
+  credentials: true
+}));
 
 /**
- * ─────────────────────────────
- * 🌐 CORS CONFIG (API + SOCKET READY)
- * ─────────────────────────────
- */
-const corsOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
-  : ['http://localhost:3000'];
-
-app.use(
-  cors({
-    origin: corsOrigins,
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-  })
-);
-
-/**
- * ─────────────────────────────
- * 🚦 RATE LIMITING
- * ─────────────────────────────
- */
-const limiter = rateLimit({
-  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  max: Number(process.env.RATE_LIMIT_MAX) || 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    success: false,
-    message: 'طلبات كثيرة. حاول لاحقاً.',
-  },
-});
-
-app.use('/api', limiter);
-
-/**
- * ─────────────────────────────
- * 📦 BODY PARSING
- * ─────────────────────────────
+ * 📦 Body Parser
  */
 app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 
 /**
- * ─────────────────────────────
- * 📊 LOGGING
- * ─────────────────────────────
+ * 📊 Logger
  */
-if (process.env.NODE_ENV === 'development') {
+if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
-} else {
-  app.use(morgan('combined'));
 }
 
 /**
- * ─────────────────────────────
- * 🖥️ ADMIN STATIC PANEL
- * ─────────────────────────────
+ * 🚦 Rate Limit
  */
-app.use('/admin', express.static(path.join(__dirname, 'admin')));
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 200,
+    standardHeaders: true,
+    legacyHeaders: false,
+  })
+);
 
 /**
- * ─────────────────────────────
- * ❤️ HEALTH CHECK
- * ─────────────────────────────
+ * 🧪 Health Check
  */
 app.get('/health', (req, res) => {
-  res.json({
-    success: true,
-    status: 'ok',
-    environment: process.env.NODE_ENV,
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
-  });
+  res.json({ status: 'ok' });
 });
 
 /**
- * ─────────────────────────────
- * 🔌 API ROUTES
- * ─────────────────────────────
+ * 📁 Static Admin Panel
+ */
+const adminPath = path.join(__dirname, 'admin');
+app.use('/admin', express.static(adminPath));
+
+/**
+ * 🚨 ROUTE LOADER (FINAL FIX + DEBUG)
+ * هذا أهم جزء - يكشف أي ملف خربان مباشرة
+ */
+const loadRoute = (name, routePath) => {
+  try {
+    const mod = require(routePath);
+
+    if (!mod || typeof mod.use !== 'function') {
+      console.error(`❌ ROUTE BROKEN: ${name}`, mod);
+      throw new Error(`${name} is not a valid Express Router`);
+    }
+
+    console.log(`✅ ROUTE OK: ${name}`);
+    return mod;
+
+  } catch (err) {
+    console.error(`🔥 FAILED TO LOAD: ${name}`);
+    console.error(err.message);
+    process.exit(1); // يوقف السيرفر ويبين المشكلة فوراً
+  }
+};
+
+/**
+ * 🌐 ROUTES (SAFE LOADING)
+ */
+const authRoutes = loadRoute('authRoutes', './src/routes/authRoutes');
+const userRoutes = loadRoute('userRoutes', './src/routes/userRoutes');
+const categoryRoutes = loadRoute('categoryRoutes', './src/routes/categoryRoutes');
+const questionRoutes = loadRoute('questionRoutes', './src/routes/questionRoutes');
+const gameRoutes = loadRoute('gameRoutes', './src/routes/gameRoutes');
+const adminRoutes = loadRoute('adminRoutes', './src/routes/adminRoutes');
+
+/**
+ * 🔗 API ROUTES
  */
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -128,28 +106,18 @@ app.use('/api/games', gameRoutes);
 app.use('/api/admin', adminRoutes);
 
 /**
- * ─────────────────────────────
- * ❌ 404 HANDLER
- * ─────────────────────────────
+ * ❌ 404 Handler
  */
 app.use((req, res) => {
-  notFoundResponse(res, `المسار ${req.originalUrl} غير موجود`);
+  return notFound(res, 'Route not found');
 });
 
 /**
- * ─────────────────────────────
- * 🚨 GLOBAL ERROR HANDLER
- * ─────────────────────────────
+ * 🚨 Global Error Handler
  */
-app.use(errorHandler);
+app.use((err, req, res, next) => {
+  console.error('🔥 ERROR:', err);
+  return errorHandler(err, req, res, next);
+});
 
-/**
- * ─────────────────────────────
- * ⚡ SOCKET HOOK (IMPORTANT FOR GAME)
- * ─────────────────────────────
- * هذا المكان يتم استخدامه في server.js
- * app.set('io', io)
- */
-app.set('io', null);
-
-module.exports = { app, corsOrigins };
+module.exports = app;

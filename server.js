@@ -3,38 +3,53 @@
 require('dotenv').config();
 
 const http = require('http');
-const { app, corsOrigins } = require('./app');
+const app = require('./app');
 const connectDB = require('./src/config/db');
-const mongoose = require('mongoose');
 
 const PORT = process.env.PORT || 5000;
 
+/**
+ * 🚀 Start Server
+ */
 const startServer = async () => {
   try {
     await connectDB();
 
     const server = http.createServer(app);
 
-    let io = null;
-
+    /**
+     * ✅ SOCKET INITIALIZATION (safe placeholder)
+     * إذا عندك setIo لاحقاً بنضيفه هنا
+     */
     try {
-      const socketModule = require('./src/sockets/gameSocket');
-      if (socketModule?.initSocket) {
-        io = socketModule.initSocket(server, corsOrigins);
+      const { setIo } = require('./src/sockets');
+      if (typeof setIo === 'function') {
+        setIo(server, process.env.CORS_ORIGINS?.split(',') || ['*']);
       }
-    } catch (e) {
-      console.log('Socket disabled');
+    } catch (err) {
+      console.log('⚠️ Socket not initialized yet:', err.message);
     }
 
     server.listen(PORT, () => {
       console.log(`🚀 Server running on ${PORT}`);
     });
 
-    process.on('SIGINT', () => process.exit(0));
-    process.on('SIGTERM', () => process.exit(0));
+    /**
+     * 🧹 Graceful shutdown
+     */
+    const shutdown = () => {
+      console.log('🛑 Shutting down server...');
+      server.close(() => {
+        process.exit(0);
+      });
+    };
+
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
 
   } catch (err) {
-    console.error(err);
+    console.error('❌ Server Error:', err);
+    process.exit(1);
   }
 };
 

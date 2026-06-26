@@ -3,121 +3,12 @@
 const Game = require('../models/Game');
 const Question = require('../models/Question');
 const mongoose = require('mongoose');
-
-const { pickRandom } = require('../services/questionSelector.service');
-
-// ✅ FIXED SOCKET IMPORT
+const questionSelector = require('../services/questionSelector.service');
 const { getIo } = require('../sockets');
 
 /**
- * ─────────────────────────────
- * 🧠 AUTO FINISH CHECK
- * ─────────────────────────────
+ * 🧠 GET NEXT QUESTION (DB ONLY)
  */
-const autoCheckFinish = async (game) => {
-  if (!game?.board?.length) return false;
-
-  const allAnswered = game.board.every((c) => c.isAnswered);
-  if (!allAnswered) return false;
-
-  let winner = 'tie';
-
-  const teamAScore = game.score?.teamA || 0;
-  const teamBScore = game.score?.teamB || 0;
-
-  if (teamAScore > teamBScore) winner = 'teamA';
-  else if (teamBScore > teamAScore) winner = 'teamB';
-
-  game.winner = winner;
-  game.status = 'finished';
-  game.finishedAt = new Date();
-
-  await game.save();
-
-  const io = getIo();
-  io.to(game._id.toString()).emit('gameFinished', {
-    winner,
-    score: game.score,
-  });
-
-  return true;
-};
-
-/* ─────────────────────────────
-   🎮 GET GAMES
-───────────────────────────── */
-exports.getGames = async (req, res, next) => {
-  try {
-    const games = await Game.find({
-      organizationId: req.tenantId,
-    });
-
-    res.json({ success: true, data: games });
-  } catch (err) {
-    next(err);
-  }
-};
-
-/* ─────────────────────────────
-   🎯 GET GAME BY ID
-───────────────────────────── */
-exports.getGameById = async (req, res, next) => {
-  try {
-    const game = await Game.findOne({
-      _id: req.params.id,
-      organizationId: req.tenantId,
-    });
-
-    if (!game) {
-      return res.status(404).json({
-        success: false,
-        message: 'Game not found',
-      });
-    }
-
-    res.json({ success: true, data: game });
-  } catch (err) {
-    next(err);
-  }
-};
-
-/* ─────────────────────────────
-   🎮 START GAME
-───────────────────────────── */
-exports.startGame = async (req, res, next) => {
-  try {
-    const game = await Game.findOne({
-      _id: req.params.id,
-      organizationId: req.tenantId,
-    });
-
-    if (!game) {
-      return res.status(404).json({
-        success: false,
-        message: 'Game not found',
-      });
-    }
-
-    game.status = 'active';
-    game.startedAt = new Date();
-
-    await game.save();
-
-    const io = getIo();
-    io.to(game._id.toString()).emit('gameStarted', {
-      gameId: game._id,
-      status: game.status,
-    });
-
-    res.json({ success: true, message: 'Game started' });
-  } catch (err) {
-    next(err);
-  }
-};
-
-/* ─────────────────────────────
-   ❓ GET NEXT QUESTION
-───────────────────────────── */
 exports.getNextQuestion = async (req, res, next) => {
   try {
     const { gameId, categoryId, difficulty } = req.body;
@@ -132,10 +23,7 @@ exports.getNextQuestion = async (req, res, next) => {
       });
     }
 
-    const game = await Game.findOne({
-      _id: gameId,
-      organizationId: req.tenantId,
-    });
+    const game = await Game.findById(gameId);
 
     if (!game) {
       return res.status(404).json({
@@ -148,7 +36,11 @@ exports.getNextQuestion = async (req, res, next) => {
       .map((c) => c.questionId?.toString())
       .filter(Boolean);
 
-    const question = await pickRandom(categoryId, difficulty, usedIds);
+    const question = await questionSelector.pickRandom(
+      categoryId,
+      difficulty,
+      usedIds
+    );
 
     if (!question) {
       return res.status(404).json({
@@ -167,7 +59,7 @@ exports.getNextQuestion = async (req, res, next) => {
 
     game.board.push({
       categoryId,
-      categoryName: '',
+      categoryName: 'UNKNOWN',
       difficulty,
       questionId: question._id,
       isAnswered: false,
@@ -179,17 +71,25 @@ exports.getNextQuestion = async (req, res, next) => {
     await game.save();
 
     const io = getIo();
-    io.to(game._id.toString()).emit('newQuestion', { question });
+    if (io) {
+      io.to(game._id.toString()).emit('newQuestion', {
+        question,
+      });
+    }
 
-    res.json({ success: true, data: question });
+    return res.json({
+      success: true,
+      data: question,
+    });
+
   } catch (err) {
     next(err);
   }
 };
 
-/* ─────────────────────────────
-   🎯 SUBMIT ANSWER
-───────────────────────────── */
+/**
+ * 🎯 SUBMIT ANSWER (DB ONLY)
+ */
 exports.submitAnswer = async (req, res, next) => {
   try {
     const { gameId, questionId, answer, team } = req.body;
@@ -204,10 +104,7 @@ exports.submitAnswer = async (req, res, next) => {
       });
     }
 
-    const game = await Game.findOne({
-      _id: gameId,
-      organizationId: req.tenantId,
-    });
+    const game = await Game.findById(gameId);
 
     if (!game) {
       return res.status(404).json({
@@ -240,23 +137,21 @@ exports.submitAnswer = async (req, res, next) => {
       (v || '').toString().trim().toLowerCase();
 
     const isCorrect =
-      normalize(question.correctAnswer) === normalize(answer);
+      normalize(question.answer) === normalize(answer);
+
+    const points = question.difficulty || 100;
 
     game.score = game.score || { teamA: 0, teamB: 0 };
 
-    if (!game.score[team]) {
-      game.score[team] = 0;
+    if (isCorrect) {
+      game.score[team] += points;
     }
 
     if (cell) {
       cell.isAnswered = true;
       cell.answeredBy = team;
-      cell.pointsAwarded = isCorrect ? (question.points || 100) : 0;
+      cell.pointsAwarded = isCorrect ? points : 0;
       cell.answeredAt = new Date();
-    }
-
-    if (isCorrect) {
-      game.score[team] += question.points || 100;
     }
 
     game.currentQuestion = null;
@@ -264,25 +159,48 @@ exports.submitAnswer = async (req, res, next) => {
     await game.save();
 
     const io = getIo();
-    io.to(game._id.toString()).emit('answerResult', {
-      questionId,
-      team,
-      isCorrect,
-      score: game.score,
-    });
+    if (io) {
+      io.to(game._id.toString()).emit('answerResult', {
+        questionId,
+        team,
+        isCorrect,
+        score: game.score,
+      });
+    }
 
-    const isFinished = await autoCheckFinish(game);
+    const allAnswered = game.board.every(c => c.isAnswered);
 
-    res.json({
+    if (allAnswered) {
+      let winner = 'tie';
+
+      if (game.score.teamA > game.score.teamB) winner = 'teamA';
+      else if (game.score.teamB > game.score.teamA) winner = 'teamB';
+
+      game.status = 'finished';
+      game.winner = winner;
+      game.finishedAt = new Date();
+
+      await game.save();
+
+      if (io) {
+        io.to(game._id.toString()).emit('gameFinished', {
+          winner,
+          score: game.score,
+        });
+      }
+    }
+
+    return res.json({
       success: true,
       data: {
         isCorrect,
-        correctAnswer: question.correctAnswer,
+        correctAnswer: question.answer,
         score: game.score,
-        isFinished,
+        isFinished: game.status === 'finished',
         winner: game.winner || null,
       },
     });
+
   } catch (err) {
     next(err);
   }

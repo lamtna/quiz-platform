@@ -10,9 +10,9 @@ const {
   badRequest,
 } = require('../utils/apiResponse');
 
-// ─────────────────────────────
-// 📋 GET ALL QUESTIONS
-// ─────────────────────────────
+/**
+ * 📌 GET ALL QUESTIONS
+ */
 const getAllQuestions = async (req, res, next) => {
   try {
     const questions = await Question.find()
@@ -28,80 +28,84 @@ const getAllQuestions = async (req, res, next) => {
   }
 };
 
-// ─────────────────────────────
-// 📄 GET ONE QUESTION
-// ─────────────────────────────
+/**
+ * 📌 GET QUESTION BY ID
+ */
 const getQuestionById = async (req, res, next) => {
   try {
-    const q = await Question.findById(req.params.id);
+    const question = await Question.findById(req.params.id).populate(
+      'categoryId',
+      'name'
+    );
 
-    if (!q) return notFound(res, 'Not found');
+    if (!question) return notFound(res, 'Question not found');
 
-    return success(res, { question: q });
+    return success(res, { question });
   } catch (err) {
     next(err);
   }
 };
 
-// ─────────────────────────────
-// ➕ CREATE QUESTION
-// ─────────────────────────────
+/**
+ * 📌 CREATE QUESTION
+ */
 const createQuestion = async (req, res, next) => {
   try {
     const { text, answer, categoryId, difficulty } = req.body;
 
     if (!text || !answer || !categoryId) {
-      return badRequest(res, 'Missing fields');
+      return badRequest(res, 'Missing required fields');
     }
 
+    // تأكد من وجود الكاتيجوري
     const category = await Category.findById(categoryId);
     if (!category) return notFound(res, 'Category not found');
 
-    const q = await Question.create({
+    const question = await Question.create({
       text,
       answer,
       categoryId,
       difficulty,
-      createdBy: req.user._id,
+      createdBy: req.user?._id,
     });
 
-    return created(res, { question: q });
+    return created(res, { question }, 'Question created');
   } catch (err) {
     next(err);
   }
 };
 
-// ─────────────────────────────
-// ✏️ UPDATE QUESTION
-// ─────────────────────────────
+/**
+ * 📌 UPDATE QUESTION
+ */
 const updateQuestion = async (req, res, next) => {
   try {
-    const q = await Question.findByIdAndUpdate(
+    const question = await Question.findByIdAndUpdate(
       req.params.id,
       req.body,
       { new: true }
     );
 
-    if (!q) return notFound(res, 'Not found');
+    if (!question) return notFound(res, 'Question not found');
 
-    return success(res, { question: q });
+    return success(res, { question }, 'Question updated');
   } catch (err) {
     next(err);
   }
 };
 
-// ─────────────────────────────
-// 🗑 DELETE QUESTION
-// ─────────────────────────────
+/**
+ * 📌 DELETE QUESTION
+ */
 const deleteQuestion = async (req, res, next) => {
   try {
-    const q = await Question.findById(req.params.id);
+    const question = await Question.findById(req.params.id);
 
-    if (!q) return notFound(res, 'Not found');
+    if (!question) return notFound(res, 'Question not found');
 
-    await q.deleteOne();
+    await question.deleteOne();
 
-    return success(res, {});
+    return success(res, {}, 'Question deleted');
   } catch (err) {
     next(err);
   }

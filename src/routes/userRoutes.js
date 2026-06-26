@@ -1,65 +1,32 @@
 'use strict';
 
-const User = require('../models/User');
-const { success, notFound } = require('../utils/apiResponse');
+const express = require('express');
+const router = express.Router();
 
-/* GET ALL USERS */
-exports.getAllUsers = async (req, res, next) => {
-  try {
-    const users = await User.find().sort({ createdAt: -1 });
-    return success(res, { users }, 'ok');
-  } catch (err) {
-    next(err);
-  }
-};
+const {
+  getAllUsers,
+  getUserById,
+  updateUserRole,
+  restoreFreeGame,
+  deleteUser,
+} = require('../controllers/userController');
 
-/* GET USER */
-exports.getUserById = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.params.id);
-    if (!user) return notFound(res, 'not found');
-    return success(res, { user }, 'ok');
-  } catch (err) {
-    next(err);
-  }
-};
+const { protect, adminOnly } = require('../middleware/auth');
 
-/* UPDATE ROLE */
-exports.updateUserRole = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.params.id);
-    if (!user) return notFound(res, 'not found');
+// 🔐 حماية كل المسارات
+router.use(protect);
 
-    user.role = req.body.role;
-    await user.save();
+// 👥 Users
+router.get('/', adminOnly, getAllUsers);
+router.get('/:id', adminOnly, getUserById);
 
-    return success(res, { user }, 'updated');
-  } catch (err) {
-    next(err);
-  }
-};
+// ✏️ role update
+router.put('/:id/role', adminOnly, updateUserRole);
 
-/* RESTORE FREE GAME */
-exports.restoreFreeGame = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.params.id);
-    if (!user) return notFound(res, 'not found');
+// ♻️ restore game
+router.put('/:id/restore-game', adminOnly, restoreFreeGame);
 
-    user.hasFreeGame = true;
-    await user.save();
+// 🗑 delete
+router.delete('/:id', adminOnly, deleteUser);
 
-    return success(res, { user }, 'restored');
-  } catch (err) {
-    next(err);
-  }
-};
-
-/* DELETE USER */
-exports.deleteUser = async (req, res, next) => {
-  try {
-    await User.findByIdAndDelete(req.params.id);
-    return success(res, {}, 'deleted');
-  } catch (err) {
-    next(err);
-  }
-};
+module.exports = router;
