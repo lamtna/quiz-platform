@@ -1,13 +1,11 @@
 'use strict';
 
-const Game = require('../models/Game');
-const Question = require('../models/Question');
 const mongoose = require('mongoose');
-const questionSelector = require('../services/questionSelector.service');
+const GameService = require('../services/game.service');
 const { getIo } = require('../sockets');
 
 /**
- * 🧠 GET NEXT QUESTION (DB ONLY)
+ * 🧠 GET NEXT QUESTION
  */
 exports.getNextQuestion = async (req, res, next) => {
   try {
@@ -23,55 +21,15 @@ exports.getNextQuestion = async (req, res, next) => {
       });
     }
 
-    const game = await Game.findById(gameId);
-
-    if (!game) {
-      return res.status(404).json({
-        success: false,
-        message: 'Game not found',
-      });
-    }
-
-    const usedIds = (game.board || [])
-      .map((c) => c.questionId?.toString())
-      .filter(Boolean);
-
-    const question = await questionSelector.pickRandom(
+    const { game, question } = await GameService.getNextQuestion({
+      gameId,
       categoryId,
       difficulty,
-      usedIds
-    );
-
-    if (!question) {
-      return res.status(404).json({
-        success: false,
-        message: 'No questions available',
-      });
-    }
-
-    game.currentQuestion = {
-      questionId: question._id,
-      categoryId,
-      difficulty,
-      startedAt: new Date(),
-      duration: question.timer ?? 30,
-    };
-
-    game.board.push({
-      categoryId,
-      categoryName: 'UNKNOWN',
-      difficulty,
-      questionId: question._id,
-      isAnswered: false,
-      answeredBy: null,
-      pointsAwarded: 0,
-      answeredAt: null,
     });
 
-    await game.save();
-
     const io = getIo();
-    if (io) {
+
+    if (io && question) {
       io.to(game._id.toString()).emit('newQuestion', {
         question,
       });
@@ -80,6 +38,7 @@ exports.getNextQuestion = async (req, res, next) => {
     return res.json({
       success: true,
       data: question,
+      gameStatus: game.status,
     });
 
   } catch (err) {
@@ -88,7 +47,7 @@ exports.getNextQuestion = async (req, res, next) => {
 };
 
 /**
- * 🎯 SUBMIT ANSWER (DB ONLY)
+ * 🎯 SUBMIT ANSWER
  */
 exports.submitAnswer = async (req, res, next) => {
   try {
@@ -104,61 +63,16 @@ exports.submitAnswer = async (req, res, next) => {
       });
     }
 
-    const game = await Game.findById(gameId);
-
-    if (!game) {
-      return res.status(404).json({
-        success: false,
-        message: 'Game not found',
+    const { game, isCorrect, question } =
+      await GameService.submitAnswer({
+        gameId,
+        questionId,
+        answer,
+        team,
       });
-    }
-
-    const question = await Question.findById(questionId);
-
-    if (!question) {
-      return res.status(404).json({
-        success: false,
-        message: 'Question not found',
-      });
-    }
-
-    const cell = game.board.find(
-      (c) => c.questionId?.toString() === questionId
-    );
-
-    if (cell?.isAnswered) {
-      return res.status(400).json({
-        success: false,
-        message: 'Already answered',
-      });
-    }
-
-    const normalize = (v) =>
-      (v || '').toString().trim().toLowerCase();
-
-    const isCorrect =
-      normalize(question.answer) === normalize(answer);
-
-    const points = question.difficulty || 100;
-
-    game.score = game.score || { teamA: 0, teamB: 0 };
-
-    if (isCorrect) {
-      game.score[team] += points;
-    }
-
-    if (cell) {
-      cell.isAnswered = true;
-      cell.answeredBy = team;
-      cell.pointsAwarded = isCorrect ? points : 0;
-      cell.answeredAt = new Date();
-    }
-
-    game.currentQuestion = null;
-
-    await game.save();
 
     const io = getIo();
+
     if (io) {
       io.to(game._id.toString()).emit('answerResult', {
         questionId,
@@ -166,25 +80,10 @@ exports.submitAnswer = async (req, res, next) => {
         isCorrect,
         score: game.score,
       });
-    }
 
-    const allAnswered = game.board.every(c => c.isAnswered);
-
-    if (allAnswered) {
-      let winner = 'tie';
-
-      if (game.score.teamA > game.score.teamB) winner = 'teamA';
-      else if (game.score.teamB > game.score.teamA) winner = 'teamB';
-
-      game.status = 'finished';
-      game.winner = winner;
-      game.finishedAt = new Date();
-
-      await game.save();
-
-      if (io) {
+      if (game.status === 'finished') {
         io.to(game._id.toString()).emit('gameFinished', {
-          winner,
+          winner: game.winner,
           score: game.score,
         });
       }
